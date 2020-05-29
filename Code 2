@@ -1,0 +1,111 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 28 23:17:13 2020
+
+@author: hp
+"""
+
+"""
+Import packages
+"""
+from bs4 import BeautifulSoup
+import urllib
+import requests
+import re
+import csv
+import os.path
+import time
+import datetime
+import codecs
+import ftplib
+import gzip
+import pandas as pd
+import shutil
+import os
+
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ 
+""" """ """ """ """ """ """ Creation of links base  """ """ """ """ """ """ """ """This part of code download files from SEC 
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """    The output is a serie of links which belong to 
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """    10-K filings """
+
+"""""""""Inputs:                                                                    
+                HOME_DIR, directory path
+                YB, begin year
+                YF, final year
+                filing, type of filing (10-q, 10-k,8-k)
+                """""""""
+HOME_DIR = 'C:\Users\hp\Dropbox\Ayrton_RA\INVESTMENTS\Markets\Aerospace & Defense\Data\EDGAR-FILES'  ###### Definitions of directoris
+YB = 2000                                                                                            ###### Initial year
+YF = 2020                                                                                            ###### Final year 
+filing=r'^10-Q'                                                                                      ###### type of filing     
+
+
+#### Create folder to save temporal files
+NewFolders = ['\sec-download','\sec-company-index-files' , '\sec-company-index-files-combined']
+for i in NewFolders:
+    newFolder = (HOME_DIR + i)
+    if not os.path.exists(newFolder):
+        os.makedirs(newFolder)
+
+#### Download forms from EDGAR (containt root need to download filing of firms)
+for YYYY in range(YB, YF):
+    for QTR in range(1,5):
+        urllib.urlretrieve("https://www.sec.gov/Archives/edgar/full-index/%s/QTR%s/form.gz" % (YYYY, QTR), "%s/sec-download/form-%s-QTR%s.gz" %( HOME_DIR, YYYY, QTR))
+
+#### Unzip 
+for YYYY in range(YB, YF):
+    for QTR in range(1,5):
+        path_to_file = "%s/sec-download/form-%s-QTR%s.gz" % (HOME_DIR, YYYY, QTR)
+        path_to_destination = "%s/sec-company-index-files/form-%s-QTR%s" % (HOME_DIR, YYYY, QTR)
+        with gzip.open(path_to_file, 'rb') as infile:
+            with open(path_to_destination, 'wb') as outfile:
+                for line in infile:
+                    outfile.write(line)
+
+#### Recognize  files
+for YYYY in range(YB, YF):
+    outlines=[]
+    for QTR in range(1,5):
+        with open("%s/sec-company-index-files/form-%s-QTR%s" % (HOME_DIR, YYYY, QTR), 'r') as infile:
+            for line in infile:
+                if re.search(filing, line):
+                    outlines.append(line)
+        
+        with open("%s/sec-company-index-files-combined/form-%s-10qs.txt" % (HOME_DIR, YYYY),'w') as outfile:
+            outfile.writelines(outlines)
+                    
+## generate a URL for each filing  
+header = '\t'.join(['formtype', 'companyname', 'cik','filingdate','url']) + '\n'
+url_base = "https://www.sec.gov/Archives/"
+for YYYY in range(YB, YF):
+    outline_list = []
+    with open("%s/sec-company-index-files-combined/form-%s-10qs.txt" % (HOME_DIR, YYYY), "r") as infile:
+        for currentLine in infile:
+            currentLine = currentLine.split()
+            n = len(currentLine)
+            formType = currentLine[0]
+            filingURL = currentLine[-1]
+            filingDate = currentLine[n-2]
+            CIK = currentLine[n-3]
+            companyName = ' '.join(currentLine[1:(n-4)])
+            outLine = '\t'.join([formType, companyName, CIK, filingDate, url_base + filingURL]) + '\n'
+            outline_list.append(outLine)
+ 
+    with open("%s/output/form-%s-10qs-tdf.txt" % (HOME_DIR, YYYY), "w") as outfile:
+        outfile.write(header)
+        outfile.writelines(outline_list)
+        
+## Append every year file in a big file which contained them.        
+with open("%s/all-10q-submissions.txt" % HOME_DIR,'w') as outfile:
+    outfile.write(header)
+ 
+with open("%s/all-10q-submissions.txt" % HOME_DIR,'a') as outfile:
+    for YYYY in range(YB, YF):
+        with open("%s/output/form-%s-10qs-tdf.txt" % (HOME_DIR, YYYY), 'r') as infile:
+            outfile.writelines(infile.readlines()[1:])
+
+##Erase trash folders
+for i in NewFolders:
+    directTash = (HOME_DIR + i )
+    shutil.rmtree(directTash)            
