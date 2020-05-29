@@ -1,0 +1,233 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 28 14:40:27 2020
+
+@author: Shadow
+"""
+"""
+Import packages
+"""
+from bs4 import BeautifulSoup
+import urllib
+import requests
+import re
+import csv
+import os.path
+import time
+import datetime
+import codecs
+import ftplib
+import gzip
+import pandas as pd
+import shutil
+import os
+from selenium import webdriver
+
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ 
+""" """ """ """ """ Part I: Get CIK code from ticker symbol """ """ """ """ """ """This part of code download files from SEC 
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """    The output is a serie of links which belong to 
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """    10-K filings """
+
+"""""""""Inputs: 
+                HOME_DIR, directory path where file are .
+                file_name, name of file which contain URLS of selected tickers.
+                url_column, name of column which contain urls.
+                """""""""
+                
+                
+HOME_DIR = r'C:\Users\hp\Dropbox\Ayrton_RA\INVESTMENTS\Markets\Aerospace & Defense\Data\EDGAR-FILES/'
+file_name = "Input_scrap.dta"
+url_column = 'url'
+URLS = pd.read_stata(HOME_DIR + file_name)
+len(URLS)
+
+newFolder = (HOME_DIR + 'scrap_data')
+if not os.path.exists(newFolder):
+    os.makedirs(newFolder)
+
+## Beginning the scrapping
+#############################################################################
+############################################################################# Part I: Use url's from 
+#############################################################################   stata 
+#############################################################################
+
+def newMatrix(f,c,n):
+        matriz=[]
+        for i in range(f):
+            a=[n]*c
+            matriz.append(a)
+        return matriz
+    
+List_path = newMatrix(len(URLS), 4 , 0 )
+for i in range(385, len(URLS)):
+    List_path[i][0] = URLS['symbol'][i]
+    List_path[i][1] = int(URLS['year'][i])
+    List_path[i][2] = URLS['date'][i]
+    base_url = (r'https://www.sec.gov')
+    normal_url = URLS[url_column][i]
+    document_url= normal_url.replace('-','').replace('.txt', '/index.json')
+    content = requests.get(document_url).json()
+    for file in content['directory']['item']:
+        ##grab teh filing summary and create new url leadin to the file so we can download it.
+        if file['name']== 'FilingSummary.xml':
+            xml_summary=base_url + content['directory']['name'] + '/' + file['name']
+            #print('-'*100)
+            #print('File Name: ' + file['name'])
+            #print('File Path: ' + xml_summary)
+            if re.search ( r'edgar', xml_summary):
+                List_path[i][3] = xml_summary
+                print( str(URLS['date'][i]) + ' ' +  URLS['symbol'][i] )
+            else:
+                List_path[i][3] = "0"
+        
+
+            
+            
+
+#############################################################################
+############################################################################# Part II: 
+#############################################################################
+#############################################################################
+
+
+## Define a new base url that represents the filing folder. This will come in
+## handy when we need to download the reports:
+              
+                
+for i in range(0, len(List_path) ):     
+    if List_path[i][3]==0:
+        "There is not summary"
+    else:
+        base_url = List_path[i][3].replace( 'FilingSummary.xml', '' )        
+        print(base_url)
+        ##Request and parse the content
+        content = requests.get(xml_summary).content
+        soup = BeautifulSoup(content, 'lxml')
+        ##find the 'myreports' tag because the contains all the individual reports submitted.
+        reports = soup.find('myreports')
+        ##I want a list to store all the individual components of the reports, so create the master list.
+        master_reports = []
+        ## Loop through each report in the 'myreports' 
+        ## tag but avoid the last one as this is will cause an error.
+        for report in reports.find_all('report')[:-1]:    
+            #Lets create a dictionary to store all the different parts we need.
+            report_dict = {}
+            report_dict['name_short'] = report.shortname.text
+            report_dict['name_long'] = report.longname.text
+            #report_dict['position'] = report.position.text
+            #report_dict['category'] = report.menucategory.text
+            report_dict['url'] = base_url + report.htmlfilename.text
+            
+            #Append the dictionary to the master list
+            master_reports.append(report_dict)
+            #Print the info to the user
+            #print('-'*100)
+            print(base_url + report.htmlfilename.text)
+            print(report.longname.text)
+            print(report.shortname.text)
+            #print(report.menucategory.text)
+            #print(report.position.text)
+            
+            
+        #############################################################################
+        ############################################################################# Part III: 
+        #############################################################################
+        #############################################################################    
+            
+        ### CReate the list to hold the statement urls
+        statements_url = [] 
+        for report_dict in master_reports:
+            ##Define the statements we want to look for.
+            item1 = "Document and Entity Information"
+            #item2 = "Consolidated Balance Sheets"
+            #item3 = "Consolidated Statements of Operations"
+            #item4 = "Consolidated Statements of Cash Flows"
+            
+            ##Store them in a list
+            report_list = [item1]
+            
+            ## If the short name can be found in the report list.
+            if report_dict['name_short'] in report_list:
+                ##Print some info and store it in the statements url.
+                #print('-'*100)
+                #print(report_dict['name_short'])
+                #print(report_dict['url'])
+                statements_url.append(report_dict['url'])
+            
+        
+        ## Let's assume we want all the statements in a single data set 
+        statements_data = []
+        ##Loop through each statement url
+        for statement in statements_url:
+            #define a dictionary that will store the different parts of the statement.
+            statement_data={}
+            statement_data['headers'] = []
+            statement_data['sections'] = []
+            statement_data['data'] = []
+            
+            #request the statement file content
+            content = requests.get(statement).content
+            report_soup = BeautifulSoup(content, 'html')
+            
+            #Find all the rows, figure out what type of row it is, parse the elements,
+            # and store in the statement file list.
+            aa = str(report_soup)
+            if re.search( r'error', aa):
+                print( 'There are errors' )
+            else:
+                bb = str(report_soup.table)
+                if re.search( r'tr' , bb ):
+                    for index, row in enumerate(report_soup.table.find_all('tr')):
+                        #first let´s get all the elements.
+                        cols=row.find_all('td')
+                        
+                        #if it's a regular row and not a section or a table header
+                        if (len(row.find_all('th'))==0 and len(row.find_all('strong'))==0):
+                            reg_row=[ele.text.strip() for ele in cols]
+                            statement_data['data'].append(reg_row)
+                            
+                        #if it's a regular row and a section but not a table header
+                        elif(len(row.find_all('th'))==0 and len(row.find_all('strong'))!=0):
+                            sec_row=cols[0].text.strip()
+                            statement_data['sections'].append(sec_row)
+                            
+                        ##Finally, if it's not any of those it must be a header    
+                        elif( len(row.find_all('th'))!=0 and len( row.find_all('strong'))!=0):
+                            hed_row=[ele.text.strip() for ele in row.find_all('th')]
+                            statement_data['headers'].append(hed_row)
+                        else:
+                            print('We encountered and error')
+                    ##Append it to the master list
+                    statements_data.append(statement_data)
+                
+                
+                #############################################################################
+                ############################################################################# Part IV: 
+                #############################################################################
+                #############################################################################
+                        
+                ##Grab the proper components
+                
+                Table=[]
+                for x in range(0, len(statements_data)):
+                    income_header = statements_data[x]['headers']
+                    income_data = statements_data[x]['data']
+                    
+                    ##Put the data in a DataFrame
+                    income_df= pd.DataFrame(income_data)
+                    """
+                    """
+                    #GEt rid of the '$', '(',')', and covert the '' to NaNs.
+                    income_df = income_df.replace( '[\$]', '', regex=True )\
+                                         .replace( '[(]', '-', regex=True )\
+                                         .replace( '', 'NaN', regex=True )
+                    #Change the column headers
+                   # income_df.columns = income_header
+                    #Display
+                    #print('-'*100)
+                    #print('Final Product')
+                    #print('-'*100)
+                    #Show the df
+                    outputfile = (newFolder + '/' + List_path[i][0] + '_' +str(List_path[i][1]) + '.csv' )
+                    income_df.to_csv( outputfile, encoding="utf-8", sep=';' )
