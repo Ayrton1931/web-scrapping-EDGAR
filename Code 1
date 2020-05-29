@@ -1,0 +1,74 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Jan 29 15:33:31 2020
+
+@author: Shadow
+"""
+
+"""
+Import packages
+"""
+from bs4 import BeautifulSoup
+import urllib
+import requests
+import re
+import csv
+import os.path
+import time
+import datetime
+import codecs
+import ftplib
+import gzip
+import pandas as pd
+import shutil
+import os
+from selenium import webdriver
+
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ 
+""" """ """ """ """ Part I: Get CIK code from ticker symbol """ """ """ """ """ """This part of code  
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """    get CIK code from ticker which are
+""" """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """ """    supplied by you"""
+
+"""""""""Inputs: 
+                HOME_DIR, directory path.
+                path_Tickers, path of tickers file.
+                name_ticker_file, name of ticker file.
+                column_name, name of column which contain ticker.  
+                """""""""
+
+HOME_DIR = 'C:\Users\hp\Dropbox\Ayrton_RA\INVESTMENTS\Markets\Aerospace & Defense\Data\EDGAR-FILES'  #### Definitin of home directory
+path_Tickers = ("C:\Users\hp\Dropbox\Ayrton_RA\INVESTMENTS\Markets\Aerospace & Defense\Data/")       #### DEfinition of input file which contain tickers
+name_ticker_file = ('AeroDef_ETF_tickers.dta')                                                       #### Name of files which contain tickers names
+column_name = "Symbol"
+
+
+
+TICKERs = pd.read_stata(path_Tickers + name_ticker_file)                                            #### Import Stata file.
+DEFAULT_TICKERS = TICKERs[column_name]                                                              #### 
+
+def newMatrix(f,c,n):                                                                               ### Definition of a function which create a matrix
+        matriz=[]
+        for i in range(f):
+            a=[n]*c
+            matriz.append(a)
+        return matriz
+
+List_CIK=newMatrix(len(DEFAULT_TICKERS), 1, 0 )                                                      #### Create a empty matrix to save results 
+for j in range(0, len(DEFAULT_TICKERS) ):                                                            #### Bucle for get CIK's code from any tickers
+    URL = 'https://www.sec.gov/cgi-bin/browse-edgar?CIK={}&owner=exclude&action=getcompany'          #### URL of EDGAR page
+    url = URL.format(DEFAULT_TICKERS[j])                                                             #### Get inside website by ticker  
+    soup = BeautifulSoup(requests.get(url).content)                                                  #### GEt URL code   
+    CIKs = soup.find_all('span', class_='companyName')                                               #### Looking for CIK code 
+    for i in CIKs:                                                                                  
+        b = i.find_all('a')
+        for ii in b:
+            cik = ii.text.strip()
+            CIK= int(cik.split(" ")[0])
+            List_CIK[j] = CIK
+
+List_CIK = pd.DataFrame(List_CIK)                                                                     #### Transform list to dataframe
+List_CIK = pd.concat( [ TICKERs['Symbol'] , List_CIK ], axis=1  )                                     #### Gather ticker's symbols to CIK`s codes  
+List_CIK.columns = ['Symbol','CIK']                                                                   #### Rename columns
+cik_stata= (HOME_DIR + '/List_CIK.csv')                                                               #### Definition of file direction    
+List_CIK.to_csv( cik_stata, encoding="utf-8" )                                                        #### Export dataframe to CSV file.  
